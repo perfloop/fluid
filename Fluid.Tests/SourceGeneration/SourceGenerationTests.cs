@@ -67,6 +67,82 @@ public class SourceGenerationTests
     }
 
     [Fact]
+    public async Task ForLoopOffsetsAreRelativeToTheSourceAndStayInBounds()
+    {
+#if COMPILED
+        var parser = new FluidParser().Compile();
+#else
+        var parser = new FluidParser();
+#endif
+        var liquid =
+            "{% assign stringOffset = '-1' %}{% assign computedOffset = -1 %}" +
+            "{% assign lastArrayItem = items[-1] %}{{ lastArrayItem }}|" +
+            "{% for a in (1..3) offset: -1 %}{{ a }}{% else %}none{% endfor %}|" +
+            "{% for b in (1..3) offset: '-1' %}{{ b }}{% else %}none{% endfor %}|" +
+            "{% for c in (1..3) offset: stringOffset %}{{ c }}{% else %}none{% endfor %}|" +
+            "{% for d in (1..3) offset: computedOffset %}{{ d }}{% else %}none{% endfor %}|" +
+            "{% for arrayItem in items offset: -1 %}{{ arrayItem }}{% else %}none{% endfor %}|" +
+            "{% for e in (1..3) offset: -3 %}{{ e }}{% else %}none{% endfor %}|" +
+            "{% for f in (1..3) offset: -4 %}{{ f }}{% else %}none{% endfor %}|" +
+            "{% for g in (1..3) offset: -2147483648 %}{{ g }}{% else %}none{% endfor %}|" +
+            "{% for h in (1..3) offset: 2147483647 %}{{ h }}{% else %}none{% endfor %}|" +
+            "{% for i in (1..3) offset: -2 reversed %}{{ i }}{% else %}none{% endfor %}|" +
+            "{% for j in (1..5) offset: -3 limit: -1 %}{{ j }}{% else %}none{% endfor %}|" +
+            "{% for k in (1..3) offset: -1 limit: 0 %}{{ k }}{% else %}none{% endfor %}|" +
+            "{% for l in emptyItems offset: -1 %}{{ l }}{% else %}none{% endfor %}|" +
+            "{% for m in items offset: 1 %}{{ m }}{% else %}none{% endfor %}|" +
+            "{% for n in items offset: -2 limit: 1 %}{{ n }}{% endfor %}|" +
+            "{% for n in items offset: continue %}{{ n }}{% else %}none{% endfor %}";
+        var sourceValues = new[] { 1, 2, 3 };
+        var fiveSourceValues = new[] { 1, 2, 3, 4, 5 };
+        var expectedLast = string.Join("", sourceValues.Skip(sourceValues.Length - 1));
+        var expectedAll = string.Join("", sourceValues);
+        var expectedReversedSuffix = string.Join("", sourceValues.Skip(sourceValues.Length - 2).Reverse());
+        var expectedLimitedSuffix = string.Join("", fiveSourceValues.Skip(fiveSourceValues.Length - 3).Take(2));
+        var expectedOffset = string.Join("", sourceValues.Skip(1));
+        var expectedBeforeContinue = string.Join("", sourceValues.Skip(sourceValues.Length - 2).Take(1));
+        var expectedContinue = string.Join("", sourceValues.Skip(sourceValues.Length - 1));
+        var expected = string.Join("|", new[]
+        {
+            expectedLast, expectedLast, expectedLast, expectedLast, expectedLast, expectedLast,
+            expectedAll, "none", "none", "none", expectedReversedSuffix, expectedLimitedSuffix,
+            "none", "none", expectedOffset, expectedBeforeContinue, expectedContinue
+        });
+        var template = parser.Parse(liquid);
+        var source = template.Compile(new SourceGenerationOptions
+        {
+            Namespace = "Fluid.Tests.Generated",
+            ClassName = "T" + Guid.NewGuid().ToString("N")
+        });
+        var generated = CompileToAssembly(source.SourceCode);
+        var type = generated.GetType(source.FullTypeName, throwOnError: true);
+        var instance = (IFluidTemplate)Activator.CreateInstance(type, nonPublic: true);
+        var runtimeWriter = new StringWriter();
+        var generatedWriter = new StringWriter();
+        var runtimeContext = new TemplateContext()
+            .SetValue("items", sourceValues)
+            .SetValue("emptyItems", Array.Empty<int>());
+        var generatedContext = new TemplateContext()
+            .SetValue("items", sourceValues)
+            .SetValue("emptyItems", Array.Empty<int>());
+
+        var runtimeFailure = await Record.ExceptionAsync(
+            () => template.RenderAsync(runtimeWriter, HtmlEncoder.Default, runtimeContext).AsTask());
+        var generatedFailure = await Record.ExceptionAsync(
+            () => instance.RenderAsync(generatedWriter, HtmlEncoder.Default, generatedContext).AsTask());
+        var runtimeOutput = runtimeWriter.ToString();
+        var generatedOutput = generatedWriter.ToString();
+        var renderedAsExpected = runtimeFailure is null && generatedFailure is null &&
+            runtimeOutput == expected && generatedOutput == expected;
+        var failureDetails = $"interpreter exception: {runtimeFailure?.GetType().Name ?? "none"}; " +
+            $"interpreter output: '{runtimeOutput}'; generated exception: {generatedFailure?.GetType().Name ?? "none"}; " +
+            $"generated output: '{generatedOutput}'";
+
+        Assert.True(renderedAsExpected,
+            "For-loop offsets must render the expected source-end slices in interpreted and generated templates. " + failureDetails);
+    }
+
+    [Fact]
     public async Task GeneratedTemplate_StrictVariables_ThrowsOnMissingVariable()
     {
         var parser = new FluidParser();

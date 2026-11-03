@@ -102,6 +102,8 @@ Notice
 - The `<li>` tags are at the same index as in the template, even though the `{% for }` tag had some leading spaces
 - The `<ul>` and `<li>` tags are on contiguous lines even though the `{% for }` is taking a full line.
 
+For a `{% for %}` tag, a nonnegative `offset` counts from the source's beginning. A negative offset counts back from its end: for three items, `offset: -1` starts at the last item and `offset: -3` starts at the first. `offset: -4` runs an empty loop and `{% else %}` when present. Shopify Liquid 5.14.0 instead starts a negative offset at the first item; its [range slicing code](https://github.com/Shopify/liquid/blob/4e39ae4/lib/liquid/range_slice.rb#L12-L16) clamps the start to zero. This follows Fluid's existing negative array-index behavior ([`ArrayValue.GetIndexAsync`](Fluid/Values/ArrayValue.cs)) and deliberately differs from Shopify Liquid.
+
 <br>
 
 ## Command line tool

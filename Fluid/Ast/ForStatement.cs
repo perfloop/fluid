@@ -143,6 +143,13 @@ public sealed class ForStatement : TagStatement, ISourceable
             else
             {
                 startIndex = await EvaluateIntegerArgumentAsync("offset", Offset, context);
+
+                if (startIndex < 0)
+                {
+                    // Negative offsets count back from the end of this source.
+                    var normalizedStartIndex = (long)source.Count + startIndex;
+                    startIndex = normalizedStartIndex < 0 ? source.Count : (int)normalizedStartIndex;
+                }
             }
         }
 
@@ -388,6 +395,15 @@ public sealed class ForStatement : TagStatement, ISourceable
             {
                 var offsetExpr = context.GetExpressionMethodName(Offset);
                 context.WriteLine($"startIndex = (int)(await {offsetExpr}({context.ContextName})).ToNumberValue({context.ContextName});");
+                context.WriteLine("if (startIndex < 0)");
+                context.WriteLine("{");
+                using (context.Indent())
+                {
+                    context.WriteLine("// Negative offsets count back from the end of this source.");
+                    context.WriteLine("var normalizedStartIndex = (long)source.Count + startIndex;");
+                    context.WriteLine("startIndex = normalizedStartIndex < 0 ? source.Count : (int)normalizedStartIndex;");
+                }
+                context.WriteLine("}");
             }
         }
 
